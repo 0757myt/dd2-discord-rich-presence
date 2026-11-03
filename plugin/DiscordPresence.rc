@@ -1,0 +1,29 @@
+// File properties shown in Explorer (Details tab) for DiscordPresence.dll
+1 VERSIONINFO
+FILEVERSION 1,0,1,0
+PRODUCTVERSION 1,0,1,0
+FILEFLAGSMASK 0x3F
+FILEFLAGS 0x0
+FILEOS 0x40004
+FILETYPE 0x2
+FILESUBTYPE 0x0
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName", "JustS73"
+            VALUE "FileDescription", "Discord Rich Presence plugin for REFramework (Dragon's Dogma 2)"
+            VALUE "FileVersion", "1.0.1"
+            VALUE "InternalName", "DiscordPresence"
+            VALUE "LegalCopyright", "JustS73"
+            VALUE "OriginalFilename", "DiscordPresence.dll"
+            VALUE "ProductName", "Discord Rich Presence for DD2"
+            VALUE "ProductVersion", "1.0.1"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END
