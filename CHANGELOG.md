@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+- Out of combat the second line rotates between the tracked quest, the place and the in-game day
+  (`Day {day}`); the flavour lines (`state_filler`, plus `state_night` at night) show only when none of these is known.
+  The place is no longer put in front of the activity, where it rarely fit.
+- The main pawn line (`Pawn: {pawn_name}`) is no longer in the rotation.
+- Combat rotates `Fighting: {enemy}`, `♥ {hp_percent}%` and `{condition}` (knocked down, or the worst affliction,
+  Drenched included), starting with the enemy each time a fight begins. Being knocked down no longer replaces combat.
+- The cover art tooltip lists every party pawn with their vocation (`{party_pawns}`, entry format `pawn_entry`),
+  main pawn first.
+- A line that is too long is cut before its ` - ` (`Seafloor Shrine - Sacred Grounds` -> `Seafloor Shrine`).
+- The party size (`(4 of 4)`) is off by default (`show_party`).
+- Character names no longer carry the favorability suffix other mods add to the game's name lookup
+  (` - Normal (477.0)`).
+- English: `Soaked` is now `Drenched`, as in the game.
+- New placeholders: `{party_pawns}`, `{condition}`. New text keys: `state_filler`, `combat_rotation`, `pawn_entry`.
+- The config upgrades automatically (version 9); lines you edited are kept, `show_party` is turned off once.
+
 ## 2.0.0
 
 - The second line shows where you are and what you're doing: `{place} · {activity}`.

@@ -10,7 +10,7 @@ local CONFIG_FILE = "DiscordPresence/config.json"
 local OUT_FILE = "DiscordPresence/presence.json"
 local STATE_FILE = "DiscordPresence/state.json" -- last place name, so it survives a restart
 local INTERVAL = 2.0 -- seconds between writes
-local CONFIG_VERSION = 8
+local CONFIG_VERSION = 9
 local GAME_TITLE = "Dragon's Dogma 2" -- image hover text when nothing else can be filled in
 -- Art asset uploaded to the Discord application (Developer Portal -> Rich Presence -> Art Assets)
 local COVER_ASSET = "dd2_cover"
@@ -20,18 +20,22 @@ local OLD_STEAM_COVER = "https://shared.cloudflare.steamstatic.com/store_item_as
 -- Placeholders: see README.md or the "Discord Presence" node in the REFramework menu.
 -- A list rotates over time; a line whose placeholder is unknown right now is skipped (e.g. "Quest: {quest}"
 -- while no quest is selected). "*_fallback" keys are used when nothing in the main key could be filled in.
--- The second line is state_format: {place} is the last place-name banner, {activity} the first of
--- dead / down / climbing / combat / status / carry-grapple-glide that applies, else the "state" rotation.
+-- The second line is state_format: {activity} is the first of dead / climbing / combat / down / status /
+-- carry-grapple-glide that applies, else the "state" rotation ("state_filler" + "state_night" when none of
+-- "state" can be filled in). In combat it rotates activity_combat and combat_rotation ({condition} = knocked
+-- down or the worst status). A line too long for Discord is cut before its " - " ("Seafloor Shrine - ...").
 local DEFAULT_TEXTS = {
     en = {
         details = "{name} · {job} · Lv. {level}",
         details_fallback = "{job} · Lv. {level}",
-        state_format = "{place} · {activity}",
+        state_format = "{activity}",
         state_format_fallback = "{activity}",
-        state = { "Pawn: {pawn_name}", "Quest: {quest}", "On the Arisen's path" },
+        state = { "Quest: {quest}", "{place}", "Day {day}" },
+        state_filler = { "On the Arisen's path" },
         state_night = { "Braving the night" },
         activity_combat = "Fighting: {enemy}",
         activity_combat_fallback = "In combat!",
+        combat_rotation = { "♥ {hp_percent}%", "{condition}" },
         activity_climb = "Climbing: {climb_target}",
         activity_climb_fallback = "Climbing",
         activity_dead = "Fallen",
@@ -43,12 +47,13 @@ local DEFAULT_TEXTS = {
             burning = "Burning", poisoned = "Poisoned", frostbitten = "Frostbitten", frozen = "Frozen",
             petrified = "Petrified", asleep = "Asleep", unconscious = "Unconscious", silenced = "Silenced",
             shocked = "Shocked", tarred = "Tarred", blinded = "Blinded", bewitched = "Bewitched",
-            possessed = "Possessed", soaked = "Soaked",
+            possessed = "Possessed", soaked = "Drenched",
         },
         weather = { clear = "Clear", partly_cloudy = "Partly cloudy", cloudy = "Cloudy", drizzle = "Drizzle", downpour = "Downpour" },
         state_menu = "In the main menu",
-        large_text = "Pawn {pawn_name}: {pawn_job}, Lv. {pawn_level}",
+        large_text = "{party_pawns}",
         large_text_fallback = GAME_TITLE,
+        pawn_entry = "{pawn_name} ({pawn_job})", -- one pawn in {party_pawns}, joined with " · "
         small_text = "{place} · {time} · {weather}",
         small_text_fallback = "{time} · {weather}",
         buttons = { { label = "View on Steam", url = "https://store.steampowered.com/app/2054970/" } },
@@ -56,12 +61,14 @@ local DEFAULT_TEXTS = {
     ru = {
         details = "{name} · {job} · Ур. {level}",
         details_fallback = "{job} · Ур. {level}",
-        state_format = "{place} · {activity}",
+        state_format = "{activity}",
         state_format_fallback = "{activity}",
-        state = { "Пешка: {pawn_name}", "Квест: {quest}", "Арисен в пути" },
+        state = { "Квест: {quest}", "{place}", "День {day}" },
+        state_filler = { "Арисен в пути" },
         state_night = { "Бросает вызов ночи" },
         activity_combat = "Бой: {enemy}",
         activity_combat_fallback = "В бою!",
+        combat_rotation = { "♥ {hp_percent}%", "{condition}" },
         activity_climb = "Лазанье: {climb_target}",
         activity_climb_fallback = "Лазанье",
         activity_dead = "Гибель",
@@ -77,8 +84,9 @@ local DEFAULT_TEXTS = {
         },
         weather = { clear = "Ясно", partly_cloudy = "Переменная облачность", cloudy = "Облачно", drizzle = "Морось", downpour = "Ливень" },
         state_menu = "В главном меню",
-        large_text = "Пешка {pawn_name}: {pawn_job}, ур. {pawn_level}",
+        large_text = "{party_pawns}",
         large_text_fallback = GAME_TITLE,
+        pawn_entry = "{pawn_name} ({pawn_job})",
         small_text = "{place} · {time} · {weather}",
         small_text_fallback = "{time} · {weather}",
         buttons = { { label = "Страница в Steam", url = "https://store.steampowered.com/app/2054970/" } },
@@ -102,10 +110,13 @@ local OLD_DEFAULT_TEXTS = {
         state = {
             { "On the Arisen's path", "With loyal pawns", "Seeking the Dragon" },
             { "On the Arisen's path", "Traveling with {pawn_name}", "Seeking the Dragon" },
+            { "Pawn: {pawn_name}", "Quest: {quest}", "On the Arisen's path" },
         },
+        state_format = { "{place} · {activity}" },
         state_night = { { "Braving the night", "Lantern lit, blade drawn" } },
         state_combat = { "In combat!" },
-        large_text = { "{job}, Lv. {level} · HP {hp_percent}%", "{name} · {job}, Lv. {level} · HP {hp_percent}%" },
+        large_text = { "{job}, Lv. {level} · HP {hp_percent}%", "{name} · {job}, Lv. {level} · HP {hp_percent}%",
+                       "Pawn {pawn_name}: {pawn_job}, Lv. {pawn_level}" },
         large_text_fallback = { "{job}, Lv. {level} · HP {hp_percent}%" },
         small_text = { "", "{time} · {weather}" },
         small_text_fallback = { "{time}" },
@@ -116,10 +127,13 @@ local OLD_DEFAULT_TEXTS = {
         state = {
             { "Арисен в пути", "С верными пешками", "В поисках дракона" },
             { "Арисен в пути", "Пешка {pawn_name} рядом", "В поисках дракона" },
+            { "Пешка: {pawn_name}", "Квест: {quest}", "Арисен в пути" },
         },
+        state_format = { "{place} · {activity}" },
         state_night = { { "Бросает вызов ночи", "С фонарём и клинком" } },
         state_combat = { "В бою!" },
-        large_text = { "{job}, ур. {level} · HP {hp_percent}%", "{name} · {job}, ур. {level} · HP {hp_percent}%" },
+        large_text = { "{job}, ур. {level} · HP {hp_percent}%", "{name} · {job}, ур. {level} · HP {hp_percent}%",
+                       "Пешка {pawn_name}: {pawn_job}, ур. {pawn_level}" },
         large_text_fallback = { "{job}, ур. {level} · HP {hp_percent}%" },
         small_text = { "", "{time} · {weather}" },
         small_text_fallback = { "{time}" },
@@ -141,10 +155,10 @@ local DEFAULTS = {
     small_image = "", -- a fixed small icon; empty = activity / weather icons below
     show_icons = true,
     icons = DEFAULT_ICONS,
-    show_party = true,
+    show_party = false, -- Discord's " (3 of 4)" after the state line
     party_max = 4,
     -- Discord's profile pop-out cuts lines after about 30 characters; longer lines drop the party size,
-    -- then the place (or use details_fallback) until they fit. 0 = never shorten.
+    -- then use the *_fallback text or are cut before " - " until they fit. 0 = never shorten.
     max_line_length = 30,
     place_timeout_min = 10, -- outside towns, forget the place this long after its banner (0 = never)
     texts = DEFAULT_TEXTS,
@@ -185,6 +199,11 @@ local function load_config()
                     t[oldKey] = nil
                 end
             end
+        end
+        if cfg.config_version < 9 then
+            cfg.show_party = false -- turned off by default in version 9
+            local st = type(cfg.texts.en) == "table" and cfg.texts.en.status
+            if type(st) == "table" and st.soaked == "Soaked" then st.soaked = "Drenched" end
         end
         if cfg.large_image == OLD_STEAM_COVER then cfg.large_image = COVER_ASSET end
         if type(cfg.icons) == "table" then
@@ -304,6 +323,10 @@ local function chara_name(char)
     local result = nameMethod and try(function() return nameMethod:call(nil, cid) end)
     if result ~= nil and type(result) ~= "string" then
         result = try(function() return result:call("ToString") end)
+    end
+    if type(result) == "string" then
+        -- show_favor.lua hooks getName and appends " - Normal (477.0)" / " - <rank> (value)"; leave that out
+        result = result:gsub(" %- [%w_]+ %([%d%.%-]+%)$", "")
     end
     if type(result) == "string" and result ~= "" then
         if key then names[key] = result end
@@ -551,13 +574,31 @@ local function read_state()
     end
 
     local pm = sdk.get_managed_singleton("app.PawnManager")
-    s.pawns = int(call(call(pm, "getAllPartyPawn"), "get_Count"))
+    local partyList = call(pm, "getAllPartyPawn") -- List<app.Pawn>, main pawn included
+    s.pawns = int(call(partyList, "get_Count"))
     if s.pawns then s.party = 1 + s.pawns end
     local mainPawn = call(call(pm, "get_MainPawn"), "get_CachedCharacter")
     if mainPawn then
         s.pawn_name = chara_name(mainPawn)
         s.pawn_level = int(call(call(mainPawn, "get_Context"), "get_Level"))
         s.pawn_job = job_name(read_job(mainPawn))
+    end
+
+    -- every party pawn's name and vocation, main pawn first (for {party_pawns})
+    s.pawn_list = {}
+    local mainAddr = mainPawn and try(function() return mainPawn:get_address() end)
+    if mainPawn and s.pawn_name then
+        s.pawn_list[1] = { pawn_name = s.pawn_name, pawn_job = s.pawn_job }
+    end
+    for i = 0, (s.pawns or 0) - 1 do
+        local chara = call(call(partyList, "get_Item", i), "get_CachedCharacter")
+        local addr = chara and try(function() return chara:get_address() end)
+        if chara and addr ~= mainAddr then
+            local name = chara_name(chara)
+            if name then
+                s.pawn_list[#s.pawn_list + 1] = { pawn_name = name, pawn_job = job_name(read_job(chara)) }
+            end
+        end
     end
 
     local bm = sdk.get_managed_singleton("app.BattleManager")
@@ -584,11 +625,13 @@ local function read_state()
     end
     s.status_key = top_status(player)
 
-    -- what the Arisen is doing, most telling first
+    s.down = call(player, "get_IsDown") == true
+
+    -- what the Arisen is doing, most telling first (in combat, down and status go into the combat rotation)
     if call(player, "get_IsDead") == true then s.kind = "dead"
-    elseif call(player, "get_IsDown") == true then s.kind = "down"
     elseif s.climbing then s.kind = "climb"
     elseif s.in_combat then s.kind = "combat"
+    elseif s.down then s.kind = "down"
     elseif s.status_key and s.status_key ~= "soaked" then s.kind = "status" -- rain soaks you too often to report
     else s.kind = ACTION_KINDS[int(field(human, "<ActionType>k__BackingField")) or -1] end
     return s
@@ -659,9 +702,17 @@ local current, lastState = {}, {} -- shown in the REFramework menu
 local PARTY_SUFFIX_LENGTH = 9 -- Discord appends " (4 of 4)" to the state line
 
 -- {activity} text for what the Arisen is doing; the "state" rotation when nothing special is going on
-local function activity_text(s, index)
+local function activity_text(s, index, combatIndex)
     local k = s.kind
-    if k == "combat" then return pick(text("activity_combat"), index, s) or pick(text("activity_combat_fallback"), index, s) end
+    if k == "combat" then
+        -- "Fighting: X", then combat_rotation; {condition} = knocked down, else the worst status (drenched too)
+        s.condition = s.down and pick(text("activity_down"), 0, s) or s.status
+        local lines = collect({}, text("activity_combat"), s)
+        if #lines == 0 then collect(lines, text("activity_combat_fallback"), s) end
+        collect(lines, text("combat_rotation"), s)
+        if #lines > 0 then return lines[(combatIndex % #lines) + 1] end
+        return nil
+    end
     if k == "climb" then return pick(text("activity_climb"), index, s) or pick(text("activity_climb_fallback"), index, s) end
     if k == "status" then return s.status end
     if k then
@@ -669,10 +720,26 @@ local function activity_text(s, index)
         if line then return line end
     end
     local lines = collect({}, text("state"), s)
-    if is_night(s) then collect(lines, text("state_night"), s) end
+    if #lines == 0 then
+        collect(lines, text("state_filler"), s)
+        if is_night(s) then collect(lines, text("state_night"), s) end
+    end
     if #lines > 0 then return lines[(index % #lines) + 1] end
     return nil
 end
+
+-- {party_pawns}: "Name (Vocation) · Name (Vocation) · ..."
+local function party_pawns(s)
+    local parts = {}
+    for _, p in ipairs(s.pawn_list or {}) do
+        local entry = fill(text("pawn_entry"), p) or p.pawn_name
+        if entry then parts[#parts + 1] = entry end
+    end
+    if #parts == 0 then return nil end
+    return table.concat(parts, " · ")
+end
+
+local combatStart = nil -- os.clock() when the current fight began, so its rotation starts at "Fighting: X"
 
 -- small icon: climbing or fallen, otherwise the time of day
 local function icon_key(s)
@@ -682,11 +749,16 @@ local function icon_key(s)
 end
 
 local function build_activity(s)
-    local index = math.floor(os.clock() / math.max(15, config.rotate_interval_sec or 20))
+    local now = os.clock()
+    local interval = math.max(15, config.rotate_interval_sec or 20)
+    local index = math.floor(now / interval)
+    if s.in_combat then combatStart = combatStart or now else combatStart = nil end
+    local combatIndex = combatStart and math.floor((now - combatStart) / interval) or 0
     local a = { assets = {} }
 
     s.weather = WEATHER_KEYS[s.weather_id or -1] and text_in("weather", WEATHER_KEYS[s.weather_id])
     s.status = s.status_key and text_in("status", s.status_key)
+    s.party_pawns = party_pawns(s)
 
     if not s.in_game then
         a.details = pick(text("state_menu"), index, s)
@@ -699,7 +771,7 @@ local function build_activity(s)
         local shorter = pick(text("details_fallback"), index, s)
         a.details = (details and (fits(details) or not shorter)) and details or shorter
 
-        s.activity = activity_text(s, index)
+        s.activity = activity_text(s, index, combatIndex)
         local full = pick(text("state_format"), index, s)
         local short = pick(text("state_format_fallback"), index, s)
         local partyLen = (config.show_party and s.party) and PARTY_SUFFIX_LENGTH or nil
@@ -714,6 +786,11 @@ local function build_activity(s)
             end
         end
         if not a.state then a.state = short or full end
+        if a.state and not fits(a.state, withParty and partyLen or 0) then
+            -- "Seafloor Shrine - Sacred Grounds" -> "Seafloor Shrine"
+            local head = a.state:match("^(.-) %- ")
+            if head and head ~= "" then a.state = head end
+        end
         if withParty then
             local max = math.floor(config.party_max or 4)
             a.party = { size = { math.min(s.party, max), max } }
@@ -723,6 +800,9 @@ local function build_activity(s)
     a.assets.large_image = nonempty(config.large_image)
     a.assets.large_text = (s.in_game and pick(text("large_text"), index, s))
         or pick(text("large_text_fallback"), index, s) or GAME_TITLE
+    if (utf8.len(a.assets.large_text) or 0) > 128 then -- Discord's limit for image hover text
+        a.assets.large_text = a.assets.large_text:sub(1, utf8.offset(a.assets.large_text, 126) - 1) .. "…"
+    end
     a.assets.small_image = nonempty(config.small_image)
     if not a.assets.small_image and s.in_game and config.show_icons ~= false then
         local key = icon_key(s)
@@ -773,8 +853,8 @@ re.on_frame(function()
     })
 end)
 
-local FIELDS = { "name", "job", "level", "place", "activity", "pawn_name", "pawn_job", "pawn_level", "quest",
-                 "enemy", "enemies", "climb_target", "status", "weather", "time", "hour", "minute", "day",
+local FIELDS = { "name", "job", "level", "place", "activity", "pawn_name", "pawn_job", "pawn_level", "party_pawns",
+                 "quest", "enemy", "enemies", "condition", "climb_target", "status", "weather", "time", "hour", "minute", "day",
                  "pawns", "party", "hp", "max_hp", "hp_percent" }
 
 re.on_draw_ui(function()
